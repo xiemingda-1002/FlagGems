@@ -35,12 +35,15 @@ def zeros_kernel(
 ):
     pid = ext.program_id(axis=0)
 
-    for sub_block_start_idx in range(0, BLOCK_SIZE, BLOCK_SIZE_SUB):
-        sub_offset = (
-            pid * BLOCK_SIZE + sub_block_start_idx + tl.arange(0, BLOCK_SIZE_SUB)
-        )
-        mask = sub_offset < n_elements
-        tl.store(output_ptr + sub_offset, 0.0, mask=mask)
+    for block_start_idx in range(
+        pid * BLOCK_SIZE, n_elements, tl.num_programs(0) * BLOCK_SIZE
+    ):
+        for sub_block_start_idx in range(0, BLOCK_SIZE, BLOCK_SIZE_SUB):
+            sub_offset = (
+                block_start_idx + sub_block_start_idx + tl.arange(0, BLOCK_SIZE_SUB)
+            )
+            mask = sub_offset < n_elements
+            tl.store(output_ptr + sub_offset, 0.0, mask=mask)
 
 
 def zeros(size, *, dtype=None, layout=None, device=None, pin_memory=None):
@@ -52,7 +55,7 @@ def zeros(size, *, dtype=None, layout=None, device=None, pin_memory=None):
 
     out = torch.empty(size, device=device, dtype=dtype)
     N = volume(size)
-    grid_fn = lambda meta: (max(triton.cdiv(N, meta["BLOCK_SIZE"]), 1),)
+    grid_fn = lambda meta: (min(max(triton.cdiv(N, meta["BLOCK_SIZE"]), 1), 65535),)
     with torch_device_fn.device(device):
         zeros_kernel[grid_fn](out, N, BLOCK_SIZE=20480, BLOCK_SIZE_SUB=1024)
     return out

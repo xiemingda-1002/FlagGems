@@ -37,6 +37,7 @@ from .bmm import bmm
 from .cat import cat, cat_out
 from .cholesky_solve import cholesky_solve, cholesky_solve_out
 from .concat import concat
+from .copy import copy, copy_
 from .count_nonzero import count_nonzero
 from .cummax import cummax
 from .cummin import cummin
@@ -56,6 +57,7 @@ from .full import full
 from .full_like import full_like
 from .fused_adam_ import fused_adam_
 from .gather import gather, gather_backward
+from .gelu import gelu, gelu_, gelu_backward
 from .geometric import geometric, geometric_
 from .grouped_matmul import grouped_matmul
 from .groupnorm import group_norm, group_norm_backward
@@ -67,6 +69,7 @@ from .index import index
 from .index_add import index_add, index_add_
 from .index_copy_ import index_copy, index_copy_
 from .index_fill import index_fill, index_fill_
+from .index_put import index_put_
 from .index_reduce import index_reduce, index_reduce_, index_reduce_out
 from .index_select import index_select
 from .isin import isin
@@ -94,6 +97,7 @@ from .linalg_solve_triangular import (
 )
 from .linear import linear
 from .linspace import linspace
+from .lift_fresh import lift_fresh, lift_fresh_copy, lift_fresh_copy_out
 from .log_ import log_
 from .log_normal import log_normal
 from .log_sigmoid_backward import log_sigmoid_backward, log_sigmoid_backward_out
@@ -109,7 +113,7 @@ from .mean import mean, mean_dim
 from .min import min, min_dim
 from .mm import mm, mm_out
 from .mode import mode
-from .mul import mul
+from .mul import mul, mul_, multiply, multiply_
 from .multinomial import multinomial
 from .nanmedian import nanmedian, nanmedian_dim, nanmedian_dim_values, nanmedian_out
 from .nansum import nansum, nansum_out
@@ -117,6 +121,7 @@ from .nonzero_static import nonzero_static, nonzero_static_out
 from .ones import ones
 from .ones_like import ones_like
 from .outer import outer
+from .pad import constant_pad_nd, pad
 from .pad_sequence import pad_sequence
 from .pairwise_distance import pairwise_distance
 from .polar import polar
@@ -248,6 +253,7 @@ __all__ = [
     "index_copy_",
     "index_fill",
     "index_fill_",
+    "index_put_",
     "index_reduce",
     "index_reduce_",
     "index_reduce_out",
@@ -307,6 +313,9 @@ __all__ = [
     "mm_out",
     "mode",
     "mul",
+    "mul_",
+    "multiply",
+    "multiply_",
     "multinomial",
     "nanmedian",
     "nanmedian_dim",

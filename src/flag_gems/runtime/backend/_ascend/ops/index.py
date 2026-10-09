@@ -209,18 +209,29 @@ def _adjacent_index_candidate_configs(index_len, suffix_size, indices_len, prefi
             continue
         if block_m * block_s > max_tile_elems:
             continue
-        if _ceil_div(index_len, block_m) > max_grid_axis:
+        index_blocks = _ceil_div(index_len, block_m)
+        suffix_tiles = _ceil_div(suffix_size, block_s)
+        base_programs = int(prefix_size) * index_blocks
+        if base_programs > max_grid_axis:
             continue
-        if _ceil_div(suffix_size, block_s) > max_grid_axis:
-            continue
+        # Ascend limits the product of all grid axes. Group suffix tiles in
+        # one program when an otherwise valid 2D tile exceeds that limit.
+        max_suffix_programs = max_grid_axis // base_programs
+        suffix_tiles_per_program = _ceil_div(suffix_tiles, max_suffix_programs)
+        if suffix_tiles_per_program > 1:
+            layout = _LAYOUT_SUFFIX_LOOP
         if indices_len > 1 and block_m > 16:
             continue
-        key = (layout, block_m, block_s, 1)
+        key = (layout, block_m, block_s, suffix_tiles_per_program)
         if key in seen:
             continue
-        config = _find_adjacent_index_config(tuned_configs, block_m, block_s, layout, 1)
+        config = _find_adjacent_index_config(
+            tuned_configs, block_m, block_s, layout, suffix_tiles_per_program
+        )
         if config is None:
-            config = _adjacent_index_config(block_m, block_s, layout, 1)
+            config = _adjacent_index_config(
+                block_m, block_s, layout, suffix_tiles_per_program
+            )
         seen.add(key)
         configs.append(config)
         if len(configs) >= max_configs:
@@ -246,12 +257,22 @@ def _adjacent_index_candidate_configs(index_len, suffix_size, indices_len, prefi
     if configs:
         return configs
 
-    block_m = max(16, min(256, min_block_m))
+    block_m = max(16, min(256, _ceil_div(prefix_size * index_len, max_grid_axis)))
     block_s = max(1, min(int(suffix_size), max_tile_elems // block_m))
+    base_programs = int(prefix_size) * _ceil_div(index_len, block_m)
+    if base_programs > max_grid_axis:
+        return []
+    suffix_tiles = _ceil_div(suffix_size, block_s)
+    max_suffix_programs = max_grid_axis // base_programs
+    suffix_tiles_per_program = _ceil_div(suffix_tiles, max_suffix_programs)
+    layout = _LAYOUT_SUFFIX_LOOP if suffix_tiles_per_program > 1 else _LAYOUT_2D_TILE
     config = _find_adjacent_index_config(
-        tuned_configs, block_m, block_s, _LAYOUT_2D_TILE, 1
+        tuned_configs, block_m, block_s, layout, suffix_tiles_per_program
     )
-    return [config or _adjacent_index_config(block_m, block_s, _LAYOUT_2D_TILE, 1)]
+    return [
+        config
+        or _adjacent_index_config(block_m, block_s, layout, suffix_tiles_per_program)
+    ]
 
 
 def _adjacent_suffix_loop_config(index_len, suffix_size, prefix_size):
@@ -490,6 +511,16 @@ class AscendAdjacentIndexFunction:
             configs = _adjacent_index_candidate_configs(
                 index_len, suffix_size, indices_len, prefix_size
             )
+            if not configs:
+                # An extreme prefix/index shape cannot fit even after suffix
+                # grouping. Use the native indexing path instead of launching
+                # an invalid NPU grid.
+                out.copy_(
+                    _aten_index_fallback(
+                        inp, [None] * start_dim + list(tensor_indices)
+                    )
+                )
+                return inp
             code = _write_adjacent_index_code(
                 tuple(inp.shape),
                 start_dim,
@@ -718,7 +749,12 @@ def index(inp, indices):
     # Note: kernel needs to handle the fact that input was potentially permuted
     # and output shape includes None dimensions
     if inp.ndim == 1 and len(tensor_indices) == 1:
-        return torch.gather(inp, 0, tensor_indices[0])
+        # Flatten indices so gather receives the same rank as the input, then
+        # restore the advanced-index output shape. Normalize negative indices
+        # with tensor operations so this path remains graph-capturable.
+        flat_index = tensor_indices[0].reshape(-1)
+        flat_index = torch.where(flat_index < 0, flat_index + inp.shape[0], flat_index)
+        return torch.gather(inp, 0, flat_index).reshape(tensor_indices[0].shape)
 
     index_wrapper(inp, tensor_indices, out)
     return out

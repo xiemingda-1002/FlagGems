@@ -49,6 +49,10 @@ CUSTOMIZED_UNUSED_OPS = (
     "topk",
     "cat",  # TODO: Err occurred when running Qwen3.6 vLLM with flagtree ascend3.5
     "exponential_",  # TODO: Err occurred when running Qwen3.6 vLLM with flagtree ascend3.5
+    "conv3d",  # Qwen3-VL vision profile stalls in the generic rank-5 padding kernel.
+    "pad",  # Vision attention QKV padding stalls in the generic rank-3 kernel.
+    "constant_pad_nd",  # F.pad also dispatches through this registered alias.
+    "index",  # Qwen3.6 video OCR is incorrect with the Ascend index override.
 )
 
 

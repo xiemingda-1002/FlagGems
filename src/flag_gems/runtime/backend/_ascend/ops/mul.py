@@ -232,24 +232,29 @@ def mul_generic_nd_kernel(
     BLOCK_SIZE: tl.constexpr,
     IS_BOOL: tl.constexpr,
 ):
-    offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < n_elements
-    linear = offsets
-    a_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
-    b_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
-    out_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+    for base in range(
+        tl.program_id(0) * BLOCK_SIZE,
+        n_elements,
+        tl.num_programs(0) * BLOCK_SIZE,
+    ):
+        offsets = base + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < n_elements
+        linear = offsets
+        a_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+        b_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+        out_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
 
-    for dim in tl.static_range(NDIM - 1, -1, -1):
-        idx = linear % SHAPE[dim]
-        linear = linear // SHAPE[dim]
-        a_offsets += idx * A_STRIDE[dim]
-        b_offsets += idx * B_STRIDE[dim]
-        out_offsets += idx * OUT_STRIDE[dim]
+        for dim in tl.static_range(NDIM - 1, -1, -1):
+            idx = linear % SHAPE[dim]
+            linear = linear // SHAPE[dim]
+            a_offsets += idx * A_STRIDE[dim]
+            b_offsets += idx * B_STRIDE[dim]
+            out_offsets += idx * OUT_STRIDE[dim]
 
-    a = tl.load(a_ptr + a_offsets, mask=mask)
-    b = tl.load(b_ptr + b_offsets, mask=mask)
-    out = a & b if IS_BOOL else a * b
-    tl.store(out_ptr + out_offsets, out, mask=mask)
+        a = tl.load(a_ptr + a_offsets, mask=mask)
+        b = tl.load(b_ptr + b_offsets, mask=mask)
+        out = a & b if IS_BOOL else a * b
+        tl.store(out_ptr + out_offsets, out, mask=mask)
 
 
 @libentry()
@@ -274,28 +279,33 @@ def mul_generic_nd_runtime_meta_kernel(
     BLOCK_SIZE: tl.constexpr,
     IS_BOOL: tl.constexpr,
 ):
-    offsets = tl.program_id(0) * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < n_elements
-    linear = offsets
-    a_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
-    b_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
-    out_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+    for base in range(
+        tl.program_id(0) * BLOCK_SIZE,
+        n_elements,
+        tl.num_programs(0) * BLOCK_SIZE,
+    ):
+        offsets = base + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < n_elements
+        linear = offsets
+        a_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+        b_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
+        out_offsets = tl.zeros((BLOCK_SIZE,), dtype=tl.int64)
 
-    for dim in tl.static_range(NDIM - 1, -1, -1):
-        shape_dim = tl.load(meta_ptr + dim)
-        a_stride_dim = tl.load(meta_ptr + NDIM + dim)
-        b_stride_dim = tl.load(meta_ptr + 2 * NDIM + dim)
-        out_stride_dim = tl.load(meta_ptr + 3 * NDIM + dim)
-        idx = linear % shape_dim
-        linear = linear // shape_dim
-        a_offsets += idx * a_stride_dim
-        b_offsets += idx * b_stride_dim
-        out_offsets += idx * out_stride_dim
+        for dim in tl.static_range(NDIM - 1, -1, -1):
+            shape_dim = tl.load(meta_ptr + dim)
+            a_stride_dim = tl.load(meta_ptr + NDIM + dim)
+            b_stride_dim = tl.load(meta_ptr + 2 * NDIM + dim)
+            out_stride_dim = tl.load(meta_ptr + 3 * NDIM + dim)
+            idx = linear % shape_dim
+            linear = linear // shape_dim
+            a_offsets += idx * a_stride_dim
+            b_offsets += idx * b_stride_dim
+            out_offsets += idx * out_stride_dim
 
-    a = tl.load(a_ptr + a_offsets, mask=mask)
-    b = tl.load(b_ptr + b_offsets, mask=mask)
-    out = a & b if IS_BOOL else a * b
-    tl.store(out_ptr + out_offsets, out, mask=mask)
+        a = tl.load(a_ptr + a_offsets, mask=mask)
+        b = tl.load(b_ptr + b_offsets, mask=mask)
+        out = a & b if IS_BOOL else a * b
+        tl.store(out_ptr + out_offsets, out, mask=mask)
 
 
 @libentry()
@@ -758,7 +768,7 @@ def _launch_generic(a_t, b_t, output, out_shape, a_stride, b_stride, out_stride,
     a_stride = a_stride or (0,)
     b_stride = b_stride or (0,)
     out_stride = out_stride or (0,)
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
+    grid = lambda meta: (min(triton.cdiv(n_elements, meta["BLOCK_SIZE"]), 65535),)
     if _needs_runtime_meta_for_constexpr_tuple():
         meta = torch.tensor(
             shape + a_stride + b_stride + out_stride,
@@ -998,3 +1008,11 @@ def mul_(A, B):
     ):
         return mul_complex_broadcast_func(A, B, out=A)
     return mul_broadcast_func(A, B, out=A)
+
+
+def multiply(A, B, *, out=None):
+    return mul(A, B, out=out)
+
+
+def multiply_(A, B):
+    return mul_(A, B)
