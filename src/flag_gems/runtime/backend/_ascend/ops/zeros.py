@@ -46,6 +46,26 @@ def zeros_kernel(
             tl.store(output_ptr + sub_offset, 0.0, mask=mask)
 
 
+@triton.jit
+def zero_strided_kernel(
+    output_ptr,
+    n_elements,
+    SHAPE: tl.constexpr,
+    STRIDES: tl.constexpr,
+    DIVISORS: tl.constexpr,
+    BLOCK_SIZE: tl.constexpr,
+):
+    pid = ext.program_id(axis=0)
+    for block_start in range(
+        pid * BLOCK_SIZE, n_elements, tl.num_programs(0) * BLOCK_SIZE
+    ):
+        index = block_start + tl.arange(0, BLOCK_SIZE)
+        offset = tl.full((BLOCK_SIZE,), 0, tl.int64)
+        for axis in tl.static_range(len(SHAPE)):
+            offset += (index // DIVISORS[axis] % SHAPE[axis]) * STRIDES[axis]
+        tl.store(output_ptr + offset, 0, mask=index < n_elements)
+
+
 def zeros(size, *, dtype=None, layout=None, device=None, pin_memory=None):
     logger.debug("GEMS_ASCEND ZEROS")
     if dtype is None:
@@ -59,3 +79,32 @@ def zeros(size, *, dtype=None, layout=None, device=None, pin_memory=None):
     with torch_device_fn.device(device):
         zeros_kernel[grid_fn](out, N, BLOCK_SIZE=20480, BLOCK_SIZE_SUB=1024)
     return out
+
+
+def zero_(x: torch.Tensor) -> torch.Tensor:
+    if x.numel() == 0:
+        return x
+    if not x.is_contiguous():
+        shape = tuple(x.shape)
+        strides = tuple(x.stride())
+        divisors = [1] * x.ndim
+        for axis in range(x.ndim - 2, -1, -1):
+            divisors[axis] = divisors[axis + 1] * shape[axis + 1]
+        N = x.numel()
+        grid_fn = lambda meta: (min(triton.cdiv(N, meta["BLOCK_SIZE"]), 65535),)
+        with torch_device_fn.device(x.device):
+            zero_strided_kernel[grid_fn](
+                x,
+                N,
+                SHAPE=shape,
+                STRIDES=strides,
+                DIVISORS=tuple(divisors),
+                BLOCK_SIZE=1024,
+            )
+        return x
+
+    N = x.numel()
+    grid_fn = lambda meta: (min(triton.cdiv(N, meta["BLOCK_SIZE"]), 65535),)
+    with torch_device_fn.device(x.device):
+        zeros_kernel[grid_fn](x, N, BLOCK_SIZE=20480, BLOCK_SIZE_SUB=1024)
+    return x

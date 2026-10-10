@@ -53,6 +53,7 @@ CUSTOMIZED_UNUSED_OPS = (
     "pad",  # Vision attention QKV padding stalls in the generic rank-3 kernel.
     "constant_pad_nd",  # F.pad also dispatches through this registered alias.
     "index",  # Qwen3.6 video OCR is incorrect with the Ascend index override.
+    "tensor_split",  # Generic implementation copies; MoE all_gather writes require views.
 )
 
 

@@ -73,6 +73,7 @@ from .index_put import index_put_
 from .index_reduce import index_reduce, index_reduce_, index_reduce_out
 from .index_select import index_select
 from .isin import isin
+from .is_same_size import is_same_size
 from .layernorm import layer_norm, native_layer_norm
 from .linalg_cross import linalg_cross, linalg_cross_out
 from .linalg_det import linalg_det, linalg_det_out
@@ -175,7 +176,7 @@ from .vector_norm import vector_norm
 from .vstack import vstack
 from .where import where_scalar_other, where_scalar_self, where_self, where_self_out
 from .zero import zero
-from .zeros import zeros
+from .zeros import zero_, zeros
 from .zeros_like import zeros_like
 
 __all__ = [
@@ -259,6 +260,7 @@ __all__ = [
     "index_reduce_out",
     "index_select",
     "isin",
+    "is_same_size",
     "layer_norm",
     "linalg_cross",
     "linalg_cross_out",
@@ -395,5 +397,6 @@ __all__ = [
     "where_self_out",
     "zero",
     "zeros",
+    "zero_",
     "zeros_like",
 ]
